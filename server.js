@@ -1,5 +1,8 @@
 const nodemailer = require("nodemailer");
 const express = require("express");
+const User = require("./user");
+const { generateToken, jwtAuthMiddleWare } = require("./jwt");
+const db = require("./db");
 require("dotenv").config();
 const app = express();
 const cors = require("cors");
@@ -58,6 +61,65 @@ app.post("/sendMail", async (req, res) => {
   } catch (error) {
     console.log(error);
     res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+app.post("/create-admin", async (req, res) => {
+  try {
+    const { email, password, name, role } = req.body;
+    if (!email) {
+      return res.status(400).json({ error: "Email is required" });
+    }
+    if (!password) {
+      return res.status(400).json({ error: "Password is required" });
+    }
+    const NewUser = {
+      name: name,
+      email: email,
+      password: password,
+      role: role,
+    };
+
+    const newAdmin = new User(NewUser);
+    const response = await newAdmin.save();
+    return res
+      .status(201)
+      .json({ message: "Admin created successfully", adminId: response._id });
+  } catch (error) {
+    console.error("Error creating admin:", error);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+app.post("/login-admin", async (req, res) => {
+  try {
+    const { name, password, role } = req.body;
+    if (!name || !password) {
+      return res.status(400).json({ error: "Email and password are required" });
+    }
+    console.log(name, password);
+    const admin = await User.findOne({ name: name });
+    console.log(admin);
+    if (admin == null || admin.role !== "admin") {
+      return res.status(401).json({ error: "Invalid  credentials" });
+    }
+    const isPasswordValid = await admin.comparePassword(password);
+    console.log(isPasswordValid);
+    if (!isPasswordValid) {
+      return res.status(401).json({ error: "Invalid credentials" });
+    }
+    const payload = {
+      id: admin._id,
+      name: admin.name,
+      role: admin.role,
+    };
+
+    const Token = generateToken(payload);
+
+    return res.status(200).json({ token: Token, message: "Login successful" });
+  } catch (error) {
+    console.error("Error during admin login:", error);
+    return res.status(500).json({ error: "Internal server error" });
   }
 });
 
