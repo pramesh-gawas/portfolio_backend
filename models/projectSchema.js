@@ -10,11 +10,12 @@ const projectSchema = new mongoose.Schema({
     type: String,
     required: true,
   },
-  imageUrl: {
+  projectUrl: {
     type: String,
     required: true,
   },
-  projectUrl: {
+  profileImages: [String],
+  codeLink: {
     type: String,
     required: true,
   },
