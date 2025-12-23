@@ -1,21 +1,24 @@
+require("dotenv").config();
 const express = require("express");
 const router = express.Router();
 const User = require("../models/user");
 const { jwtAuthMiddleWare, generateToken } = require("../jwt");
-const nodemailer = require("nodemailer");
 const projectSchema = require("../models/projectSchema");
-require("dotenv").config();
-const app = express();
+const multer = require("multer");
+const { put } = require("@vercel/blob");
+
+const storage = multer.memoryStorage();
+
+const upload = multer({ storage: storage });
 
 router.post("/create-admin", async (req, res) => {
   try {
     const { email, password, name, role } = req.body;
-    if (!email) {
-      return res.status(400).json({ error: "Email is required" });
+
+    if (!email || !password || !name || !role) {
+      return res.status(400).json({ error: "All fields are required" });
     }
-    if (!password) {
-      return res.status(400).json({ error: "Password is required" });
-    }
+
     const NewUser = {
       name: name,
       email: email,
@@ -36,13 +39,13 @@ router.post("/create-admin", async (req, res) => {
 
 router.post("/login-admin", async (req, res) => {
   try {
-    const { name, password, role } = req.body;
+    const { name, password } = req.body;
     if (!name || !password) {
       return res.status(400).json({ error: "Email and password are required" });
     }
     const admin = await User.findOne({ name: name });
     if (admin == null || admin.role !== "admin") {
-      return res.status(401).json({ error: "Invalid  credentials" });
+      return res.status(401).json({ error: "Invalid  user" });
     }
     const isPasswordValid = await admin.comparePassword(password);
     if (!isPasswordValid) {
@@ -63,31 +66,48 @@ router.post("/login-admin", async (req, res) => {
   }
 });
 
-router.post("/create-project", jwtAuthMiddleWare, async (req, res) => {
-  try {
-    const { title, description, imageUrl, projectUrl } = req.body;
+router.post(
+  "/create-project",
+  jwtAuthMiddleWare,
+  upload.array("images", 5),
+  async (req, res) => {
+    try {
+      const { title, description, projectUrl, codeLink } = req.body;
+      // 1. Log to see if Multer is getting files
+      console.log("Files received by Multer:", req.files?.length || 0);
+      let imageUrls = [];
+      for (const file of req.files) {
+        const blob = await put(file.originalname, file.buffer, {
+          access: "public",
+          token: process.env.BLOB_READ_WRITE_TOKEN,
+          allowOverwrite: true,
+        });
+        console.log("Uploaded to Vercel:", blob.url);
+        imageUrls.push(blob.url); // Save the actual internet URL
+      }
+      if (!title || !description || !projectUrl || !codeLink) {
+        return res.status(400).json({ error: "All fields are required" });
+      }
 
-    if (!title || !description || !imageUrl || !projectUrl) {
-      return res.status(400).json({ error: "All fields are required" });
+      const NewProject = {
+        title,
+        description,
+        projectUrl,
+        codeLink,
+        profileImages: imageUrls,
+        user: req.user.id,
+      };
+      const project = new projectSchema(NewProject);
+      const response = await project.save();
+      return res
+        .status(201)
+        .json({ message: "Project created successfully", response: response });
+    } catch (error) {
+      console.error("Error creating project:", error);
+      return res.status(500).json({ error: "Internal server error" });
     }
-
-    const NewProject = {
-      title,
-      description,
-      imageUrl,
-      projectUrl,
-      user: req.user.id,
-    };
-    const project = new projectSchema(NewProject);
-    const response = await project.save();
-    return res
-      .status(201)
-      .json({ message: "Project created successfully", response: response });
-  } catch (error) {
-    console.error("Error creating project:", error);
-    return res.status(500).json({ error: "Internal server error" });
   }
-});
+);
 
 router.delete(
   "/delete-project/:projectId",
@@ -144,10 +164,10 @@ router.put(
   }
 );
 
-router.get("/all-projects", jwtAuthMiddleWare, async (req, res) => {
+router.get("/all-projects", async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 10;
+    const limit = parseInt(req.query.limit) || 5;
     const skip = (page - 1) * limit;
 
     const totalProjects = await projectSchema.countDocuments();
@@ -159,15 +179,41 @@ router.get("/all-projects", jwtAuthMiddleWare, async (req, res) => {
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit);
-    return res
-      .status(200)
-      .json({
-        success: true,
-        currentPage: page,
-        totalPages: totalPages,
-        totalResult: totalProjects,
-        data: projects,
-      });
+    return res.status(200).json({
+      success: true,
+      currentPage: page,
+      totalPages: totalPages,
+      totalResult: totalProjects,
+      data: projects,
+    });
+  } catch (error) {
+    console.error("Error fetching projects:", error);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.get("/all-projects", async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 5;
+    const skip = (page - 1) * limit;
+
+    const totalProjects = await projectSchema.countDocuments();
+
+    const totalPages = Math.ceil(totalProjects / limit);
+    const projects = await projectSchema
+      .find()
+      .populate("user", "name")
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
+    return res.status(200).json({
+      success: true,
+      currentPage: page,
+      totalPages: totalPages,
+      totalResult: totalProjects,
+      data: projects,
+    });
   } catch (error) {
     console.error("Error fetching projects:", error);
     return res.status(500).json({ error: "Internal server error" });
