@@ -72,7 +72,8 @@ router.post(
   upload.array("images", 5),
   async (req, res) => {
     try {
-      const { title, description, projectUrl, codeLink } = req.body;
+      const { title, description, projectUrl, codeLink, languages, tools } =
+        req.body;
       // 1. Log to see if Multer is getting files
       console.log("Files received by Multer:", req.files?.length || 0);
       let imageUrls = [];
@@ -94,6 +95,8 @@ router.post(
         description,
         projectUrl,
         codeLink,
+        tools,
+        languages,
         profileImages: imageUrls,
         user: req.user.id,
       };
@@ -163,34 +166,6 @@ router.put(
     }
   }
 );
-
-router.get("/all-projects", async (req, res) => {
-  try {
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 5;
-    const skip = (page - 1) * limit;
-
-    const totalProjects = await projectSchema.countDocuments();
-
-    const totalPages = Math.ceil(totalProjects / limit);
-    const projects = await projectSchema
-      .find()
-      .populate("user", "name")
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit);
-    return res.status(200).json({
-      success: true,
-      currentPage: page,
-      totalPages: totalPages,
-      totalResult: totalProjects,
-      data: projects,
-    });
-  } catch (error) {
-    console.error("Error fetching projects:", error);
-    return res.status(500).json({ error: "Internal server error" });
-  }
-});
 
 router.get("/all-projects", async (req, res) => {
   try {

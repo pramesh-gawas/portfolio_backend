@@ -19,6 +19,8 @@ const projectSchema = new mongoose.Schema({
     type: String,
     required: true,
   },
+  languages: [String],
+  tools: [String],
   user: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "user",
